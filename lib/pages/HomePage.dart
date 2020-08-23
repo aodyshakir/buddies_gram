@@ -1,29 +1,33 @@
+import 'dart:io';
+
 import 'package:buddiesgram/models/user.dart';
 import 'package:buddiesgram/pages/CreateAccountPage.dart';
 import 'package:buddiesgram/pages/NotificationsPage.dart';
-import 'package:buddiesgram/pages/ProfilePage.dart';
 import 'package:buddiesgram/pages/SearchPage.dart';
 import 'package:buddiesgram/pages/TimeLinePage.dart';
 import 'package:buddiesgram/pages/UploadPage.dart';
+import 'package:buddiesgram/pages/ProfilePage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'dart:async';
 
-final GoogleSignIn gSignIn = GoogleSignIn(
-  scopes: <String>[
-    'email',
-    'https://www.googleapis.com/auth/contacts.readonly',
-  ],
-);
-final StorageReference storageReference = FirebaseStorage.instance.ref().child("Posts Pictures");
 
-final usersReference = Firestore.instance.collection("users");
-final postsReference = Firestore.instance.collection("posts");
+final GoogleSignIn gSignIn = GoogleSignIn();
+final usersReference =Firestore.instance.collection("users");
+final storageReference = FirebaseStorage.instance.ref().child("Post Pictures");
+final postsReference =Firestore.instance.collection("posts");
+final activityFeedReference =Firestore.instance.collection("feed");
+final commentsReference =Firestore.instance.collection("comments");
+final followersReference =Firestore.instance.collection("followers");
+final followingReference =Firestore.instance.collection("following");
+final timelineReference =Firestore.instance.collection("timeline");
+
+
 final DateTime timestamp = DateTime.now();
- User currentUser;
+User currentUser;
 
 class HomePage extends StatefulWidget {
   @override
@@ -31,52 +35,82 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  bool isSignedIn = false;
+  bool isSignedIn=false;
   PageController pageController;
-  int getPageIndex = 0;
+  int getPageIndex=0;
+  FirebaseMessaging _firebaseMessaging = FirebaseMessaging();
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  void initState() {
+  void initState(){
     super.initState();
-
     pageController = PageController();
 
     gSignIn.onCurrentUserChanged.listen((gSignInAccount) {
       controlSignIn(gSignInAccount);
-    }, onError: (gError) {
-      print("Error Massage: " + gError);
+    },onError: (gError){
+      print("Error Message: "+ gError);
     });
 
-    gSignIn.signInSilently(suppressErrors: true).then((gSignInAccount) {
+    gSignIn.signInSilently(suppressErrors: false).then((gSignInAccount){
       controlSignIn(gSignInAccount);
-    }).catchError((gError) {
-      print("Error Massage: " + gError);
+    }).catchError((gError){
+      print("Error Message: " + gError);
     });
   }
 
-  controlSignIn(GoogleSignInAccount signInAccount) async {
-    if (signInAccount != null) {
-      await saveUserInfoToFireStore();
-
+  controlSignIn(GoogleSignInAccount signInAccount) async{
+    if(signInAccount!=null){
+      await saveUserInfoToFirebase();
       setState(() {
-        isSignedIn = true;
+        isSignedIn=true;
       });
-    } else {
+      controlRealTimePushNotifications();
+    }
+    else{
       setState(() {
-        isSignedIn = false;
+        isSignedIn=false;
       });
     }
   }
 
-  saveUserInfoToFireStore() async {
+  controlRealTimePushNotifications(){
+    final GoogleSignInAccount gUser = gSignIn.currentUser;
+    if(Platform.isIOS){
+      getIOSPermissions();
+    }
+    _firebaseMessaging.getToken().then((token){
+      usersReference.document(gUser.id).updateData({"androidNotificationToken": token});
+    });
+
+    _firebaseMessaging.configure(
+      onMessage: (Map<String, dynamic> msg) async{
+        final String recipientId = msg["data"]["recipient"];
+        final String body = msg["notifications"]["body"];
+
+        if(recipientId==gUser.id){
+          SnackBar snackBar = SnackBar(
+            backgroundColor: Colors.grey,
+            content: Text(body, style: TextStyle(color: Colors.black), overflow: TextOverflow.ellipsis,),
+          );
+          _scaffoldKey.currentState.showSnackBar(snackBar);
+        }
+      }
+    );
+  }
+
+  getIOSPermissions(){
+    _firebaseMessaging.requestNotificationPermissions(IosNotificationSettings(alert: true,badge: true,sound: true));
+    _firebaseMessaging.onIosSettingsRegistered.listen((settings) {
+      print("Settings Registered : $settings");
+    });
+  }
+
+  saveUserInfoToFirebase() async{
     final GoogleSignInAccount gCurrentUser = gSignIn.currentUser;
-    DocumentSnapshot documentSnapshot =
-        await usersReference.document(gCurrentUser.id).get();
-    if (!documentSnapshot.exists) {
-      final username = await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => CreateAccountPage(),
-          ),);
+    DocumentSnapshot documentSnapshot = await usersReference.document(gCurrentUser.id).get();
+
+    if(!documentSnapshot.exists){
+      final username = await Navigator.push(context, MaterialPageRoute(builder: (context) => CreateAccountPage()));
 
       usersReference.document(gCurrentUser.id).setData({
         "id": gCurrentUser.id,
@@ -85,61 +119,49 @@ class _HomePageState extends State<HomePage> {
         "url": gCurrentUser.photoUrl,
         "email": gCurrentUser.email,
         "bio": "",
-        "timestam": timestamp
+        "timeStamp": timestamp,
       });
+
+      await followersReference.document(gCurrentUser.id).collection("userFollowers").document(gCurrentUser.id).setData({});
 
       documentSnapshot = await usersReference.document(gCurrentUser.id).get();
     }
     currentUser = User.fromDocument(documentSnapshot);
   }
 
-  void dispose() {
+  void dispose(){
     pageController.dispose();
     super.dispose();
   }
-   
-  Future<void> loginUser() async {
-    try {
-      await gSignIn.signIn();
-    } catch (error) {
-      print(error);
-    }
-  }
 
-  void logoutUser() {
+  logOutUser(){
     gSignIn.signOut();
   }
 
-  whenPageChanges(int pageIndex) {
-    setState(() {
-      this.getPageIndex = pageIndex;
-    });
+  logInUser(){
+    gSignIn.signIn();
   }
 
-  onTapChangePage(int pageIndex) {
-    pageController.animateToPage(
-      pageIndex,
-      duration: Duration(milliseconds: 400),
-      curve: Curves.bounceInOut,
-    );
+  whenPageChanges(int pageIndex){
+      setState(() {
+        this.getPageIndex = pageIndex;
+      });
   }
 
-  Scaffold buildHomeScreen() {
+  onTapChangePage(int pageIndex){
+    pageController.animateToPage(pageIndex, duration: Duration(microseconds: 400), curve: Curves.bounceInOut);
+  }
+
+  Scaffold buildHomeScreen(){
     return Scaffold(
+      key: _scaffoldKey,
       body: PageView(
         children: <Widget>[
-          TimeLinePage(),
-
-        //  RaisedButton.icon(
-        //     onPressed: logoutUser,
-        //     icon: Icon(Icons.close),
-        //     label: Text("Sign Out"),
-        //   ),
-          
+          TimeLinePage(gCurrentUser: currentUser),
           SearchPage(),
           UploadPage(gCurrentUser: currentUser,),
           NotificationsPage(),
-         ProfilePage(userProfileId: currentUser.id, ),
+          ProfilePage(userProfileId: currentUser?.id),
         ],
         controller: pageController,
         onPageChanged: whenPageChanges,
@@ -154,35 +176,24 @@ class _HomePageState extends State<HomePage> {
         items: [
           BottomNavigationBarItem(icon: Icon(Icons.home)),
           BottomNavigationBarItem(icon: Icon(Icons.search)),
-          BottomNavigationBarItem(
-              icon: Icon(
-            Icons.photo_camera,
-            size: 37.0,
-          )),
+          BottomNavigationBarItem(icon: Icon(Icons.photo_camera)),
           BottomNavigationBarItem(icon: Icon(Icons.favorite)),
           BottomNavigationBarItem(icon: Icon(Icons.person)),
         ],
       ),
     );
 
-    /*  RaisedButton.icon(
-            onPressed: logoutUser,
-            icon: Icon(Icons.close),
-            label: Text("Sign Out"),
-          );*/
   }
 
-  Scaffold buildSignInScreen() {
+  Scaffold buildSignInScreen(){
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-              begin: Alignment.topRight,
-              end: Alignment.bottomLeft,
-              colors: [
-                Theme.of(context).accentColor,
-                Theme.of(context).primaryColor
-              ]),
+            begin: Alignment.topRight,
+            end: Alignment.bottomLeft,
+            colors: [Theme.of(context).accentColor, Theme.of(context).primaryColor],
+          ),
         ),
         alignment: Alignment.center,
         child: Column(
@@ -190,23 +201,26 @@ class _HomePageState extends State<HomePage> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
             Text(
-              "BudiesGram",
+              "Buddies Gram",
               style: TextStyle(
-                  fontSize: 92.0, color: Colors.white, fontFamily: "Signatra"),
+                fontSize: 92.0,
+                color: Colors.white,
+                fontFamily: "Signatra",
+              ),
             ),
             GestureDetector(
-              onTap: () => loginUser(),
+              onTap: logInUser,
               child: Container(
                 width: 270.0,
                 height: 65.0,
                 decoration: BoxDecoration(
                   image: DecorationImage(
-                      image:
-                          AssetImage("assets/images/google_signin_button.png"),
-                      fit: BoxFit.cover),
+                    image: AssetImage("assests/images/google_signin_button.png"),
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
-            )
+            ),
           ],
         ),
       ),
@@ -215,9 +229,10 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    if (isSignedIn) {
+    if(isSignedIn){
       return buildHomeScreen();
-    } else {
+    }
+    else{
       return buildSignInScreen();
     }
   }
