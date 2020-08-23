@@ -225,12 +225,12 @@ class _ProfilePageState extends State<ProfilePage> {
       child: FlatButton(
           onPressed: performFunction,
           child: Container(
-            width: 245.0,
+            width: 200.0,
             height: 26.0,
             child: Text(
               title,
               style: TextStyle(
-                color: following ? Colors.grey : Colors.white70,
+                color: following ? Colors.grey : Colors.blueAccent,
                 fontWeight: FontWeight.bold,
               ),
             ),

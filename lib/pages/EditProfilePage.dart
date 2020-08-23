@@ -68,7 +68,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         iconTheme: IconThemeData(
-          color: Colors.white,
+          color: Colors.white
         ),
         title: Text("Edit Profile", style: TextStyle(color: Colors.white),),
         actions: <Widget>[
