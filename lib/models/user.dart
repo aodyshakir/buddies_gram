@@ -26,4 +26,3 @@ class User {
         bio: doc["bio"]);
   }
 }
-git remote add origin https://github.com/aodyshakir/project_Instgram.git
