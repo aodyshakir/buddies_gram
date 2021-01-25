@@ -1,30 +1,29 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class User{
+class User {
   final String id;
-  final String profileName;
   final String username;
-  final String url;
   final String email;
+  final String photoUrl;
+  final String displayName;
   final String bio;
 
-  User({
-    this.id,
-    this.profileName,
-    this.username,
-    this.url,
-    this.email,
-    this.bio,
- });
+  User(
+      {this.id,
+      this.username,
+      this.email,
+      this.photoUrl,
+      this.displayName,
+      this.bio});
 
-  factory User.fromDocument(DocumentSnapshot doc){
+  factory User.fromDocument(DocumentSnapshot doc) {
     return User(
-      id: doc.documentID,
-      email: doc['email'],
-      username: doc['username'],
-      url: doc['url'],
-      profileName: doc['profileName'],
-      bio: doc['bio'],
-    );
+        id: doc["id"],
+        username: doc["username"],
+        email: doc["email"],
+        photoUrl: doc["photoUrl"],
+        displayName: doc["displayName"],
+        bio: doc["bio"]);
   }
 }
+git remote add origin https://github.com/aodyshakir/project_Instgram.git
